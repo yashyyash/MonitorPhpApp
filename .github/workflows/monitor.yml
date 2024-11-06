@@ -2,24 +2,23 @@ name: PHP Application Monitoring
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # Runs every 15 minutes
-  workflow_dispatch:  # Allows manual triggering
+    - cron: '*/5 * * * *'  # Run every 5 minutes
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
 
 env:
-  AWS_REGION: us-east-1  # Change this to your AWS region
+  AWS_REGION: us-east-1
   APP_URL: http://3.81.166.101/app.php
   INSTANCE_ID: i-009abcc462d996efd
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
-    permissions:
-      issues: write  # Add permissions for creating issues
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
-
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v1
       with:
@@ -27,18 +26,14 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
-    - name: Install required packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y curl jq
-
-    - name: Check application availability and response time
+    - name: Check application and send metrics
       id: health_check
       run: |
+        # Check application health
         start_time=$(date +%s%N)
         http_code=$(curl -o /dev/null -s -w "%{http_code}" ${{ env.APP_URL }})
         end_time=$(date +%s%N)
-        response_time=$(( ($end_time - $start_time) / 1000000 )) # Convert to milliseconds
+        response_time=$(( ($end_time - $start_time) / 1000000 ))
         
         echo "HTTP Status Code: $http_code"
         echo "Response Time: $response_time ms"
@@ -51,6 +46,7 @@ jobs:
           --unit Milliseconds \
           --dimensions Instance=${{ env.INSTANCE_ID }}
         
+        # Record availability (1 for up, 0 for down)
         aws cloudwatch put-metric-data \
           --namespace "PHP_Application" \
           --metric-name "Availability" \
@@ -58,31 +54,27 @@ jobs:
           --unit Count \
           --dimensions Instance=${{ env.INSTANCE_ID }}
 
-    - name: Get EC2 metrics
+    - name: Get CPU metrics
       run: |
-        # Get CPU Utilization
-        current_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        five_min_ago=$(date -u -d '5 minutes ago' +"%Y-%m-%dT%H:%M:%SZ")
+        # Calculate timestamps
+        end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        start_time=$(date -u -d "5 minutes ago" +"%Y-%m-%dT%H:%M:%SZ")
         
+        # Get CPU metrics
         aws cloudwatch get-metric-statistics \
           --namespace AWS/EC2 \
           --metric-name CPUUtilization \
           --dimensions Name=InstanceId,Value=${{ env.INSTANCE_ID }} \
-          --start-time $five_min_ago \
-          --end-time $current_time \
+          --start-time "$start_time" \
+          --end-time "$end_time" \
           --period 300 \
           --statistics Average
 
-    - name: Send notification on failure
+    - name: Create issue on failure
       if: failure()
-      uses: actions/github-script@v6
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const { repo, owner } = context.repo;
-          await github.rest.issues.create({
-            owner,
-            repo,
-            title: 'Application Monitoring Alert',
-            body: 'The application monitoring check has failed. Please investigate.'
-          });
+      run: |
+        gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+        gh issue create \
+          --title "Application Monitoring Alert" \
+          --body "The application monitoring check has failed. Please investigate." \
+          --repo "${{ github.repository }}"
