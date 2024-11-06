@@ -12,14 +12,27 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3  # Updated from v2 to v3 for Node.js 20 support
+        uses: actions/checkout@v3  # Updated to v3 for Node.js 20 support
 
-      - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+      - name: Install AWS CLI
+        run: |
+          # Download the latest AWS CLI v2 package for Ubuntu
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          # Unzip the package
+          unzip awscliv2.zip
+          # Install the AWS CLI
+          sudo ./aws/install
+          # Verify installation
+          aws --version
+
+      - name: Configure AWS Credentials
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+          aws configure set default.region us-east-1
 
       - name: Run PHP App Monitoring Script
         run: |
