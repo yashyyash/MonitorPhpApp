@@ -1,0 +1,81 @@
+name: PHP Application Monitoring
+
+on:
+  schedule:
+    - cron: '*/1 * * * *'  # Runs every 1 minutes
+  workflow_dispatch:  # Allows manual triggering
+
+env:
+  AWS_REGION: us-east-1  # Change this to your AWS region
+  APP_URL: http://3.81.166.101/app.php
+  INSTANCE_ID: i-009abcc462d996efd
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Install required packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y curl jq
+
+    - name: Check application availability and response time
+      id: health_check
+      run: |
+        start_time=$(date +%s%N)
+        http_code=$(curl -o /dev/null -s -w "%{http_code}" ${{ env.APP_URL }})
+        end_time=$(date +%s%N)
+        response_time=$(( ($end_time - $start_time) / 1000000 )) # Convert to milliseconds
+        
+        echo "HTTP Status Code: $http_code"
+        echo "Response Time: $response_time ms"
+        
+        # Send metrics to CloudWatch
+        aws cloudwatch put-metric-data \
+          --namespace "PHP_Application" \
+          --metric-name "ResponseTime" \
+          --value $response_time \
+          --unit Milliseconds \
+          --dimensions Instance=${{ env.INSTANCE_ID }}
+        
+        aws cloudwatch put-metric-data \
+          --namespace "PHP_Application" \
+          --metric-name "Availability" \
+          --value $([ "$http_code" -eq 200 ] && echo 1 || echo 0) \
+          --unit Count \
+          --dimensions Instance=${{ env.INSTANCE_ID }}
+
+    - name: Get EC2 metrics
+      run: |
+        # Get CPU Utilization
+        aws cloudwatch get-metric-statistics \
+          --namespace AWS/EC2 \
+          --metric-name CPUUtilization \
+          --dimensions Name=InstanceId,Value=${{ env.INSTANCE_ID }} \
+          --start-time $(date -u -v-5M +"%Y-%m-%dT%H:%M:%SZ") \
+          --end-time $(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+          --period 300 \
+          --statistics Average
+
+    - name: Send notification on failure
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: 'Application Monitoring Alert',
+            body: 'The application monitoring check has failed. Please investigate.'
+          })
