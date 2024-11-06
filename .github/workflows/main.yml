@@ -12,17 +12,13 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3  # Updated to v3 for Node.js 20 support
+        uses: actions/checkout@v3
 
       - name: Install AWS CLI
         run: |
-          # Download the latest AWS CLI v2 package for Ubuntu
           curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          # Unzip the package
           unzip awscliv2.zip
-          # Install or update the AWS CLI
           sudo ./aws/install --update
-          # Verify installation
           aws --version
 
       - name: Configure AWS Credentials
@@ -34,15 +30,34 @@ jobs:
           aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
           aws configure set default.region us-east-1
 
-      - name: Run PHP App Monitoring Script
+      - name: Setup Log Directory
         run: |
-          # Ensure the log file exists or create it in a writable directory
-          log_file="$GITHUB_WORKSPACE/phpappmonitor.log"
-          touch "$log_file"  # Create the log file if it doesn't exist
-          chmod 666 "$log_file"  # Ensure the script has permission to write to the log file
+          # Create log directory in the workspace
+          mkdir -p "$GITHUB_WORKSPACE/logs"
+          # Create the log file
+          touch "$GITHUB_WORKSPACE/logs/phpappmonitor.log"
+          # Set permissions
+          chmod 666 "$GITHUB_WORKSPACE/logs/phpappmonitor.log"
+          # Export log path for the monitoring script
+          echo "MONITOR_LOG_PATH=$GITHUB_WORKSPACE/logs/phpappmonitor.log" >> $GITHUB_ENV
+
+      - name: Run PHP App Monitoring Script
+        env:
+          LOG_FILE: ${{ env.MONITOR_LOG_PATH }}
+        run: |
+          # Debug information
+          echo "Current directory: $(pwd)"
+          echo "Log file location: $LOG_FILE"
           
-          # Make the script executable
+          # Ensure script exists
+          if [ ! -f "phpappmonitor.sh" ]; then
+            echo "Error: phpappmonitor.sh not found"
+            ls -la
+            exit 1
+          fi
+          
+          # Make script executable
           chmod +x phpappmonitor.sh
           
-          # Run the PHP app monitor script
-          ./phpappmonitor.sh
+          # Run script with explicit log file path
+          ./phpappmonitor.sh "$LOG_FILE"
