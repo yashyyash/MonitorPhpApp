@@ -36,5 +36,13 @@ jobs:
 
       - name: Run PHP App Monitoring Script
         run: |
+          # Ensure the log file exists or create it in a writable directory
+          log_file="$GITHUB_WORKSPACE/phpappmonitor.log"
+          touch "$log_file"  # Create the log file if it doesn't exist
+          chmod 666 "$log_file"  # Ensure the script has permission to write to the log file
+          
+          # Make the script executable
           chmod +x phpappmonitor.sh
+          
+          # Run the PHP app monitor script
           ./phpappmonitor.sh
