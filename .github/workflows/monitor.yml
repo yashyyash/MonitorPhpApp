@@ -1,9 +1,12 @@
 name: PHP Application Monitoring
 
-on:
-  schedule:
-    - cron: '*/5 * * * *'  # Run every 5 minutes
-  workflow_dispatch:
+# Disabling schedule and workflow_dispatch by commenting them out
+# Uncomment to re-enable the triggers
+
+# on:
+#   schedule:
+#     - cron: '*/5 * * * *'  # Run every 5 minutes
+#   workflow_dispatch:
 
 permissions:
   contents: read
